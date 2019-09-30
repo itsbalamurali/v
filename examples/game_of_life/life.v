@@ -1,6 +1,6 @@
 import time
 
-fn print_field(field[]array_int) {
+fn print_field(field []array_int) {
 	for line in field {
 		mut s := '    '
 		for j, cell in line {
@@ -52,7 +52,7 @@ fn main() {
 	for {
 		mut new_field := []array_int
 		for i, line in field {
-			new_field << [0; line.len]
+			new_field << [0].repeat(line.len)
 		}
 		for i, line in field {
 			if i == 0 || i == field.len - 1{continue}

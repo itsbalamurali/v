@@ -5,7 +5,7 @@
 import os
 
 fn main() {
-	mut path = 'cinderella.txt'
+	mut path := 'cinderella.txt'
 	if os.args.len != 2 {
 		println('usage: word_counter [text_file]')
 		println('using $path')
@@ -13,8 +13,11 @@ fn main() {
 	else {
 		path = os.args[1]
 	}
-	contents := os.read_file(path.trim_space())
-	mut m := map[string]int{}
+	contents := os.read_file(path.trim_space()) or {
+		println('failed to open $path')
+		return
+	}
+	mut m := map[string]int
 	for word in contents.to_lower().split(' ') {
 		key := filter_word(word)
 		if key == '' {
@@ -23,10 +26,7 @@ fn main() {
 		m[key] = m[key] + 1// TODO m[key]++
 	}
 	// Sort the keys
-	mut keys := []string
-	for e in m.entries {
-		keys << e.key
-	}
+	mut keys := m.keys() 
 	keys.sort()
 	// Print the map
 	for key in keys {
