@@ -6,6 +6,10 @@ module main
 
 import os
 
+const (
+	v_modules_path = os.home_dir() + '.vmodules'
+)
+
 // add a module and its deps (module speficic dag method)
 pub fn(graph mut DepGraph) from_import_tables(import_tables map[string]FileImportTable) {
 	for _, fit in import_tables {
@@ -21,31 +25,37 @@ pub fn(graph mut DepGraph) from_import_tables(import_tables map[string]FileImpor
 pub fn(graph &DepGraph) imports() []string {
 	mut mods := []string
 	for node in graph.nodes {
-		if node.name == 'main' {
-			continue
-		}
 		mods << node.name
 	}
 	return mods
 }
 
+fn (v &V) module_path(mod string) string {
+	// submodule support
+	if mod.contains('.') {
+		return mod.replace('.', os.PathSeparator)
+		// return mod.replace('.', '/')
+	}
+	return mod
+}
+
 // 'strings' => 'VROOT/vlib/strings'
 // 'installed_mod' => '~/.vmodules/installed_mod'
 // 'local_mod' => '/path/to/current/dir/local_mod'
-fn (v &V) find_module_path(mod string) string {
+fn (v &V) find_module_path(mod string) ?string {
 	mod_path := v.module_path(mod)
 	// First check for local modules in the same directory
-	mut import_path := os.getwd() + '/$mod_path'
+	mut import_path := os.getwd() + '${os.PathSeparator}$mod_path'
 	// Now search in vlib/
 	if !os.dir_exists(import_path) {
-		import_path = '$v.lang_dir/vlib/$mod_path'
+		import_path = '$v.lang_dir${os.PathSeparator}vlib${os.PathSeparator}$mod_path'
 	}
 	//println('ip=$import_path')
 	// Finally try modules installed with vpm (~/.vmodules)
 	if !os.dir_exists(import_path) {
-		import_path = '$v_modules_path/$mod_path'
+		import_path = '$v_modules_path${os.PathSeparator}$mod_path'
 		if !os.dir_exists(import_path){
-			verror('module "$mod" not found')
+			return error('module "$mod" not found')
 		}
 	}
 	return import_path

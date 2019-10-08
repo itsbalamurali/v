@@ -16,7 +16,8 @@
 *.tmp.c
 vjs
 *.obj
-
+*.exp
+*.ilk
 *.pdb
 
 #
@@ -28,3 +29,4 @@ vjs
 # Thumbnails
 ._*
 .vrepl_temp.v
+a.out
