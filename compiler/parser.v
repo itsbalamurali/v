@@ -122,7 +122,7 @@ fn (v mut V) new_parser_from_file(path string) Parser {
 		is_vh: path.ends_with('.vh')
 	}
 	if p.pref.building_v {
-		p.scanner.should_print_relative_paths_on_error = false
+		p.scanner.should_print_relative_paths_on_error = true
 	}
 	v.cgen.file = path
 	p.scan_tokens()
@@ -937,7 +937,8 @@ fn (p mut Parser) get_type() string {
 		}
 		p.check(.rpar)
 		// p.inside_tuple = false
-		return '_V_MulRet_' + types.join('_V_').replace('*', '_PTR_')
+		typ = p.register_multi_return_stuct(types)
+		return typ
 	}
 	// fn type
 	if p.tok == .func {
@@ -947,7 +948,7 @@ fn (p mut Parser) get_type() string {
 		p.fn_args(mut f)
 		// Same line, it's a return type
 		if p.scanner.line_nr == line_nr {
-			if p.tok == .name {
+			if p.tok in [TokenKind.name, .mul, .amp, .lsbr, .question, .lpar] {
 				f.typ = p.get_type()
 			}
 			else {
@@ -1472,8 +1473,8 @@ fn (p mut Parser) var_decl() {
 		p.error('expected `=` or `:=`')
 	}
 	// all vars on left of `:=` already defined (or `_`)
-	if is_decl_assign && /*var_names.len > 1 &&*/ new_vars == 0 {
-		p.error_with_token_index('no new variables on left side of `:=`', var_token_idxs.last())
+	if is_decl_assign && var_names.len == 1 && var_names[0] == '_' {
+		p.error_with_token_index('use `=` instead of `:=`', var_token_idxs.last())
 	}
 	p.var_decl_name = if var_names.len > 1 { '_V_mret_'+var_names.join('_') } else { var_names[0] }
 	t := p.gen_var_decl(p.var_decl_name, is_static)

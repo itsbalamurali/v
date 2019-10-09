@@ -59,7 +59,9 @@ fn (p mut Parser) gen_var_decl(name string, is_static bool) string {
 		initializer := p.cgen.cur_line.right(pos)
 		if initializer.len > 0 {
 			p.cgen.resetln(' = {' + initializer.all_after('{') )
-		}
+		} else if initializer.len == 0 {
+			p.cgen.resetln(' = { 0 }')
+		}	
 	}
 
 	if is_static {
@@ -178,9 +180,9 @@ fn (p mut Parser) index_get(typ string, fn_ph int, cfg IndexCfg) {
 		}
 		else {
 			if cfg.is_ptr {
-				p.gen('( *($typ*) array__get(* $index_expr) )')
+				p.gen('( *($typ*) array_get(* $index_expr) )')
 			}  else {
-				p.gen('( *($typ*) array__get($index_expr) )')
+				p.gen('( *($typ*) array_get($index_expr) )')
 			}
 		}
 	}
@@ -356,7 +358,7 @@ fn (p mut Parser) gen_array_set(typ string, is_ptr, is_map bool,fn_ph, assign_po
 	mut cao_tmp := p.cgen.cur_line
 	mut func := ''
 	if is_map {
-		func = 'map__set(&'
+		func = 'map_set(&'
 		// CAO on map is a bit more complicated as it loads
 		// the value inside a pointer instead of returning it.
 	}
@@ -364,13 +366,13 @@ fn (p mut Parser) gen_array_set(typ string, is_ptr, is_map bool,fn_ph, assign_po
 		if is_ptr {
 			func = 'array_set('
 			if is_cao {
-				cao_tmp = '*($p.expected_type *) array__get(*$cao_tmp)'
+				cao_tmp = '*($p.expected_type *) array_get(*$cao_tmp)'
 			}
 		}
 		else {
 			func = 'array_set(&/*q*/'
 			if is_cao {
-				cao_tmp = '*($p.expected_type *) array__get($cao_tmp)'
+				cao_tmp = '*($p.expected_type *) array_get($cao_tmp)'
 			}
 		}
 	}
