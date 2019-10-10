@@ -43,6 +43,11 @@ CommonCHeaders = '
 #include <sys/wait.h> // os__wait uses wait on nix
 #endif
 
+#ifdef __DragonFly__
+#include <sys/types.h>
+#include <sys/wait.h> // os__wait uses wait on nix
+#endif
+
 #define EMPTY_STRUCT_DECLARATION
 #define EMPTY_STRUCT_INITIALIZATION 0
 // Due to a tcc bug, the length of an array needs to be specified, but GCC crashes if it is...
@@ -146,9 +151,6 @@ byteptr g_str_buf;
 int load_so(byteptr);
 void reload_so();
 void init_consts();
-#ifdef _WIN32
-BOOL isConsole;
-#endif
 '
 
 js_headers = '

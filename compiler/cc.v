@@ -72,10 +72,10 @@ fn (v mut V) cc() {
 		println('Building ${v.out_name}...')
 	}
 
-	mut debug_options := '-g'
+	mut debug_options := ''
 	mut optimization_options := '-O2'
 	if v.pref.ccompiler.contains('clang') {
-		if v.pref.is_debug {
+		if v.pref.is_debuggable {
 			debug_options = '-g -O0'
 		}
 		optimization_options = '-O3 -flto'
@@ -94,7 +94,7 @@ fn (v mut V) cc() {
 		a << debug_options
 	}
 
-	if v.pref.is_debug && os.user_os() != 'windows'{
+	if v.pref.is_debuggable && os.user_os() != 'windows'{
 		a << ' -rdynamic ' // needed for nicer symbolic backtraces
 	}
 
@@ -106,25 +106,32 @@ fn (v mut V) cc() {
 		a << f
 	}
 
-	libs := ''// builtin.o os.o http.o etc
+	mut libs := ''// builtin.o os.o http.o etc
 	if v.pref.build_mode == .build_module {
 		a << '-c'
 	}
-	else if v.pref.build_mode == .default_mode {
-		/*
-		// TODO
-		libs = '$v_modules_path/vlib/builtin.o'
-		if !os.file_exists(libs) {
-			println('object file `$libs` not found')
-			exit(1)
+	else if v.pref.is_debug {
+		vexe := os.executable()
+		builtin_o_path := '$v_modules_path/vlib/builtin.o'
+		if os.file_exists(builtin_o_path) {
+			libs = builtin_o_path
+		} else {
+			println('$builtin_o_path not found... building module builtin')
+			os.system('$vexe build module vlib/builtin')
 		}
 		for imp in v.table.imports {
 			if imp == 'webview' {
 				continue
 			}
-			libs += ' "$v_modules_path/vlib/${imp}.o"'
+			path := 	'$v_modules_path/vlib/${imp}.o'
+			println('adding ${imp}.o')
+			if os.file_exists(path) {
+				libs += ' ' + path
+			} else {
+				println('$path not found... building module $imp')
+				os.system('$vexe build module vlib/$imp')
+			}	
 		}
-		*/
 	}
 	if v.pref.sanitize {
 		a << '-fsanitize=leak'

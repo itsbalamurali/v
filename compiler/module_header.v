@@ -11,7 +11,7 @@ import (
 
 /*
 	.vh generation logic.
-	.vh files contains only function signatures, consts, and types.
+	.vh files contain only function signatures, consts, and types.
 	They are used together with pre-compiled modules.
 */
 
@@ -44,7 +44,7 @@ fn (f &Fn) v_definition() string {
 		if i == 0 && f.is_method { // skip the receiver
 			continue
 		}	
-		typ := v_type_str(arg.typ)
+		typ := v_type_str(arg.typ).replace('*', '&')
 		if arg.name == '' {
 			sb.write(typ)
 		}	 else {
@@ -56,7 +56,7 @@ fn (f &Fn) v_definition() string {
 	}
 	sb.write(')')
 	if f.typ != 'void' {
-		typ := v_type_str(f.typ)
+		typ := v_type_str(f.typ).replace('*', '&')
 		sb.write(' ')
 		sb.write(typ)
 		sb.writeln(' ')
@@ -95,7 +95,11 @@ fn v_type_str(typ_ string) string {
 		return '[]' + typ.right(6)
 	}	
 	if typ.contains('__') {
-		return typ.all_after('__')
+		opt := typ.starts_with('?')
+		typ = typ.all_after('__')
+		if opt {
+			typ = '?' + typ
+		}	
 	}	
 	return typ
 }	
@@ -166,7 +170,7 @@ fn (v &V) generate_vh() {
 				if field.access_mod == .public {
 					continue
 				}	
-				field_type := v_type_str(field.typ)
+				field_type := v_type_str(field.typ).replace('*', '&')
 				file.writeln('\t$field.name $field_type')
 			}	
 			//file.writeln('pub:')
@@ -175,7 +179,7 @@ fn (v &V) generate_vh() {
 				if field.access_mod == .private {
 					continue
 				}	
-				field_type := v_type_str(field.typ)
+				field_type := v_type_str(field.typ).replace('*', '&')
 				public_str += '\t$field.name $field_type\n'
 				//file.writeln('\t$field.name $field_type')
 			}	
@@ -213,8 +217,8 @@ fn (v &V) generate_vh() {
 	// Methods
 	file.writeln('\n// Methods //////////////////')
 	for _, typ in v.table.typesmap {
-		if typ.mod != v.mod { //&& typ.mod != '' {
-			//println('skipping method typ $typ.name mod=$typ.mod')
+		if typ.mod != v.mod && !(v.mod == 'builtin' && typ.mod == '') {
+			println('skipping method typ $typ.name mod=$typ.mod')
 			continue
 		}	
 		for method in typ.methods {
