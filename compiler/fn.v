@@ -222,6 +222,10 @@ fn (p mut Parser) fn_decl() {
 		f.name = p.check_name()
 	}
 	f.fn_name_token_idx = p.cur_tok_index()
+	// init fn
+	if f.name == 'init' && f.is_public {
+		p.error('init function cannot be public')
+	}
 	// C function header def? (fn C.NSMakeRect(int,int,int,int))
 	is_c := f.name == 'C' && p.tok == .dot
 	// Just fn signature? only builtin.v + default build mode
@@ -238,8 +242,7 @@ fn (p mut Parser) fn_decl() {
 			p.error('function names cannot contain uppercase letters, use snake_case instead')
 		}
 		if f.name[0] == `_` {
-			// TODO error
-			p.warn('function names cannot start with `_`')
+			p.error('function names cannot start with `_`, use snake_case instead')
 		}	
 		if f.name.contains('__') {
 			p.error('function names cannot contain double underscores, use single underscores instead')
@@ -807,7 +810,7 @@ fn (p mut Parser) fn_call_args(f mut Fn) &Fn {
 		p.check(.rpar)
 		return f
 	}
-	// add debug information to panic when -debug arg is passed
+	// add debug information to panic when -g arg is passed
 	if p.v.pref.is_debug && f.name == 'panic' && !p.is_js {
 		mod_name := p.mod.replace('_dot_', '.')
 		fn_name := p.cur_fn.name.replace('${p.mod}__', '')
