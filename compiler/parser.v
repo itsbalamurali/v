@@ -278,7 +278,7 @@ fn (p mut Parser) parse(pass Pass) {
 	p.builtin_mod = p.mod == 'builtin'
 	p.can_chash = p.mod=='ui' || p.mod == 'darwin'// TODO tmp remove
 	// Import pass - the first and the smallest pass that only analyzes imports
-	
+	// fully qualify the module name, eg base64 to encoding.base64
 	fq_mod := p.table.qualify_module(p.mod, p.file_path)
 	p.import_table.module_name = fq_mod
 	p.table.register_module(fq_mod)
@@ -591,7 +591,12 @@ fn (p mut Parser) type_decl() {
 		''
 	}
 	p.gen_typedef('typedef $_struct $nt_pair; //type alias name="$name" parent=`$parent.name`')
-	p.register_type_with_parent(name, parent.name)
+	p.table.register_type2(Type{
+		name: name
+		parent: parent.name
+		mod: p.mod
+		cat: TypeCategory.alias
+	})
 }
 
 // current token is `(`
@@ -2809,9 +2814,7 @@ fn (p mut Parser) char_expr() {
 fn format_str(_str string) string {
 	// TODO don't call replace 3 times for every string, do this in scanner.v
 	mut str := _str.replace('"', '\\"')
-	$if windows {
-		str = str.replace('\r\n', '\\n')
-	}
+	str = str.replace('\r\n', '\\n')
 	str = str.replace('\n', '\\n')
 	return str
 }

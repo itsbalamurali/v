@@ -271,14 +271,6 @@ fn (v mut V) compile() {
 		v.parse(file, .decl)
 	}
 
-	// generate missing module init's 
-	init_parsers := v.module_gen_init_parsers()
-	// run decl pass
-	for i in 0..init_parsers.len {
-		mut ip := init_parsers[i]
-		ip.parse(.decl)
-	}
-
 	// Main pass
 	cgen.pass = Pass.main
 	if v.pref.is_debug {
@@ -344,11 +336,6 @@ fn (v mut V) compile() {
 			// new vfmt is not ready yet
 		}
 	}
-	// run main parser on the init parsers
-	for i in 0..init_parsers.len {
-		mut ip := init_parsers[i]
-		ip.parse(.main)
-	}
 	// Generate .vh if we are building a module
 	if v.pref.build_mode == .build_module {
 		v.generate_vh()
@@ -400,36 +387,6 @@ fn (v mut V) compile() {
 	v.cc()
 }
 
-fn (v mut V) module_gen_init_parsers() []Parser  {
-	mut parsers := []Parser
-	if v.pref.build_mode == .build_module {
-		init_fn_name := mod_gen_name(v.mod) + '__init'
-		if !v.table.known_fn(init_fn_name) {
-			mod_def := if v.mod.contains('.') { v.mod.all_after('.') } else { v.mod }
-			mut fn_v := 'module $mod_def\n\n'
-			fn_v += 'fn init() { /*println(\'$v.mod module init\')*/ }'
-			mut p := v.new_parser_from_string(fn_v, 'init_gen_$v.mod')
-			p.mod = v.mod
-			parsers << p
-		}
-	}
-	else if v.pref.build_mode == .default_mode {
-		for mod in v.table.imports {
-			if mod in v.cached_mods { continue }
-			init_fn_name := mod_gen_name(mod) + '__init'
-			if !v.table.known_fn(init_fn_name) {
-				mod_def := if mod.contains('.') { mod.all_after('.') } else { mod }
-				mut fn_v := 'module $mod_def\n\n'
-				fn_v += 'fn init() { /*println(\'$v.mod module init\')*/ }'
-				mut p := v.new_parser_from_string(fn_v, 'init_gen_$mod')
-				p.mod = mod
-				parsers << p
-			}
-		}
-	}
-	return parsers
-}
-
 fn (v mut V) generate_init() {
 	$if js { return }
 	if v.pref.build_mode == .build_module {
@@ -437,8 +394,7 @@ fn (v mut V) generate_init() {
 		v.cgen.nogen = false
 		consts_init_body := v.cgen.consts_init.join_lines()
 		init_fn_name := mod_gen_name(v.mod) + '__init_consts'
-		println('generating init for $v.mod: $init_fn_name')
-		v.cgen.genln('void ${init_fn_name}() {\n$consts_init_body\n}')
+		v.cgen.genln('void ${init_fn_name}();\nvoid ${init_fn_name}() {\n$consts_init_body\n}')
 		v.cgen.nogen = nogen
 	}
 	if v.pref.build_mode == .default_mode {
@@ -446,7 +402,9 @@ fn (v mut V) generate_init() {
 		mut call_mod_init_consts := ''
 		for mod in v.table.imports {
 			init_fn_name := mod_gen_name(mod) + '__init'
-			call_mod_init += '${init_fn_name}();\n'
+			if v.table.known_fn(init_fn_name) {
+				call_mod_init += '${init_fn_name}();\n'
+			}
 			if mod in v.cached_mods {
 				call_mod_init_consts += '${init_fn_name}_consts();\n'
 			}
@@ -571,18 +529,15 @@ fn (v mut V) gen_main_end(return_statement string){
 }
 
 fn final_target_out_name(out_name string) string {
-	mut cmd := if out_name.starts_with('/') {
+	$if windows {
+		return out_name.replace('/', '\\') + '.exe'
+	}
+	return if out_name.starts_with('/') {
 		out_name
 	}
 	else {
 		'./' + out_name
 	}
-	$if windows {
-		cmd = out_name
-		cmd = cmd.replace('/', '\\')
-		cmd += '.exe'
-	}
-	return cmd
 }
 
 fn (v V) run_compiled_executable_and_exit() {
@@ -655,7 +610,7 @@ fn (v &V) v_files_from_dir(dir string) []string {
 fn (v mut V) add_v_files_to_compile() {
 	mut builtin_files := v.get_builtin_files()
 	// Builtin cache exists? Use it.
-	builtin_vh := '$v_modules_path/builtin.vh'
+	builtin_vh := '$v_modules_path${os.PathSeparator}builtin.vh'
 	if v.pref.is_debug && os.file_exists(builtin_vh) {
 		builtin_files = [builtin_vh]
 	}
@@ -672,7 +627,8 @@ fn (v mut V) add_v_files_to_compile() {
 	for file in v.get_user_files() {
 		mut p := v.new_parser_from_file(file)
 		// set mod so we dont have to resolve submodule
-		if v.pref.build_mode == .build_module && file.contains(v.mod.replace('.', os.PathSeparator)) {
+		if v.pref.build_mode == .build_module &&
+			file.contains(v.mod.replace('.', os.PathSeparator)) {
 			p.mod = v.mod
 		}
 		p.parse(.imports)
@@ -846,6 +802,12 @@ fn (v &V) log(s string) {
 }
 
 fn new_v(args[]string) &V {
+	// Create modules dirs if they are missing
+	if !os.dir_exists(v_modules_path) {
+		os.mkdir(v_modules_path)
+		os.mkdir('$v_modules_path${os.PathSeparator}cache')
+	}
+	
 	mut vgen_buf := strings.new_builder(1000)
 	vgen_buf.writeln('module main\nimport strings')
 	
@@ -899,7 +861,7 @@ fn new_v(args[]string) &V {
 		exit(1)
 	}
 	// No -o provided? foo.v => foo
-	if out_name == 'a.out' && dir.ends_with('.v') {
+	if out_name == 'a.out' && dir.ends_with('.v') && dir != '.v' {
 		out_name = dir.left(dir.len - 2)
 	}
 	// if we are in `/foo` and run `v .`, the executable should be `foo`
@@ -936,18 +898,7 @@ fn new_v(args[]string) &V {
 		}
 	}
 	else {
-		switch target_os {
-		case 'linux': _os = .linux
-		case 'windows': _os = .windows
-		case 'mac': _os = .mac
-		case 'freebsd': _os = .freebsd
-		case 'openbsd': _os = .openbsd
-		case 'netbsd': _os = .netbsd
-		case 'dragonfly': _os = .dragonfly
-		case 'msvc': _os = .msvc
-		case 'js': _os = .js
-		case 'solaris': _os = .solaris
-		}
+		_os = os_from_string(target_os)
 	}
 	// Location of all vlib files
 	vroot := os.dir(os.executable())
@@ -1137,4 +1088,22 @@ fn vhash() string {
 
 fn cescaped_path(s string) string {
   return s.replace('\\','\\\\')
+}
+
+fn os_from_string(os string) OS {
+	switch os {
+		case 'linux': return .linux
+		case 'windows': return .windows
+		case 'mac': return .mac
+		case 'freebsd': return .freebsd
+		case 'openbsd': return .openbsd
+		case 'netbsd': return .netbsd
+		case 'dragonfly': return .dragonfly
+		case 'msvc': return .msvc
+		case 'js': return .js
+		case 'solaris': return .solaris
+		case 'android': return .android
+		}
+	println('bad os $os') // todo panic?
+	return .linux
 }
