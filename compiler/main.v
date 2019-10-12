@@ -350,10 +350,6 @@ fn (v mut V) compile() {
 	
 	// All definitions
 	mut def := strings.new_builder(10000)// Avoid unnecessary allocations
-	if v.pref.build_mode == .build_module {
-		init_fn_name := v.mod.replace('.', '__') + '__init_consts'
-		def.writeln('void $init_fn_name();')
-	}
 	$if !js {
 		def.writeln(cgen.includes.join_lines())
 		def.writeln(cgen.typedefs.join_lines())
@@ -400,12 +396,17 @@ fn (v mut V) generate_init() {
 	if v.pref.build_mode == .default_mode {
 		mut call_mod_init := ''
 		mut call_mod_init_consts := ''
+		if 'builtin' in v.cached_mods {
+			v.cgen.genln('void builtin__init_consts();')
+			call_mod_init_consts += 'builtin__init_consts();\n'
+		}
 		for mod in v.table.imports {
 			init_fn_name := mod_gen_name(mod) + '__init'
 			if v.table.known_fn(init_fn_name) {
 				call_mod_init += '${init_fn_name}();\n'
 			}
 			if mod in v.cached_mods {
+				v.cgen.genln('void ${init_fn_name}_consts();')
 				call_mod_init_consts += '${init_fn_name}_consts();\n'
 			}
 		}
@@ -610,8 +611,9 @@ fn (v &V) v_files_from_dir(dir string) []string {
 fn (v mut V) add_v_files_to_compile() {
 	mut builtin_files := v.get_builtin_files()
 	// Builtin cache exists? Use it.
-	builtin_vh := '$v_modules_path${os.PathSeparator}builtin.vh'
+	builtin_vh := '$v_modules_path${os.PathSeparator}vlib${os.PathSeparator}builtin.vh'
 	if v.pref.is_debug && os.file_exists(builtin_vh) {
+		v.cached_mods << 'builtin'
 		builtin_files = [builtin_vh]
 	}
 	// Parse builtin imports
@@ -653,7 +655,7 @@ fn (v mut V) add_v_files_to_compile() {
 		// use cached built module if exists
 		if v.pref.build_mode != .build_module && !mod.contains('vweb') {
 			mod_path := mod.replace('.', os.PathSeparator)
-			vh_path := '$v_modules_path/${mod_path}.vh'
+			vh_path := '$v_modules_path${os.PathSeparator}vlib${os.PathSeparator}${mod_path}.vh'
 			if v.pref.is_debug && os.file_exists(vh_path) {
 				println('using cached module `$mod`: $vh_path')
 				v.cached_mods << mod
@@ -822,6 +824,9 @@ fn new_v(args[]string) &V {
 	if dir.ends_with(os.PathSeparator) {
 		dir = dir.all_before_last(os.PathSeparator)
 	}
+	if dir.starts_with('.$os.PathSeparator') {
+		dir = dir.right(2)
+	}
 	adir := os.realpath(dir)
 	if args.len < 2 {
 		dir = ''
@@ -918,7 +923,7 @@ fn new_v(args[]string) &V {
 		println('Go to https://vlang.io to install V.')
 		exit(1)
 	}
-	//println('out_name:$out_name')
+	// println('out_name:$out_name')
 	mut out_name_c := os.realpath('${out_name}.tmp.c')
 
 	cflags := get_cmdline_cflags(args)
