@@ -225,7 +225,6 @@ fn build_token_str() []string {
 	s[TokenKind.key_match] = 'match'
 	s[TokenKind.key_select] = 'select'
 	s[TokenKind.key_none] = 'none'
-	s[TokenKind.key_chan] = 'chan'
 
 	return s
 }
