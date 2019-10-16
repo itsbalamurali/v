@@ -4,8 +4,11 @@
 
 module compiler
 
-import os
-import term
+import (
+	os
+	term
+	readline
+)
 
 struct Repl {
 mut:
@@ -81,22 +84,27 @@ pub fn run_repl() []string {
 		os.rm(temp_file.left(temp_file.len - 2))
 	}
 	mut r := Repl{}
+	mut readline := readline.Readline{}
 	vexe := os.args[0]
+	mut prompt := '>>> '
 	for {
 		if r.indent == 0 {
-			print('>>> ')
+			prompt = '>>> '
 		}
 		else {
-			print('... ')
+			prompt = '... '
 		}
-		r.line = os.get_raw_line()
-		if r.line.trim_space() == '' && r.line.ends_with('\n') {
+		mut line := readline.read_line(prompt) or {
+				break
+		}
+		if line.trim_space() == '' && line.ends_with('\n') {
 			continue
 		}
-		r.line = r.line.trim_space()
-		if r.line.len == -1 || r.line == '' || r.line == 'exit' {
+		line = line.trim_space()
+		if line.len <= -1 || line == '' || line == 'exit' {
 			break
 		}
+		r.line = line
 		if r.line == '\n' {
 			continue
 		}
@@ -133,7 +141,7 @@ pub fn run_repl() []string {
 		if r.line.starts_with('print') {
 			source_code := r.functions.join('\n') + r.lines.join('\n') + '\n' + r.line
 			os.write_file(file, source_code)
-			s := os.exec('$vexe run $file -repl') or {
+			s := os.exec('"$vexe" run $file -repl') or {
 				verror(err)
 				return []string
 			}
@@ -152,7 +160,7 @@ pub fn run_repl() []string {
 			}
 			temp_source_code := r.functions.join('\n') + r.lines.join('\n') + '\n' + r.temp_lines.join('\n') + '\n' + temp_line
 			os.write_file(temp_file, temp_source_code)
-			s := os.exec('$vexe run $temp_file -repl') or {
+			s := os.exec('"$vexe" run $temp_file -repl') or {
 				verror(err)
 				return []string
 			}
