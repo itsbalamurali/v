@@ -9,6 +9,8 @@
 
 module readline
 
+#include <termios.h>
+
 import os
 
 // Only use standard os.get_line
@@ -27,11 +29,8 @@ pub fn (r mut Readline) read_line_utf8(prompt string) ?ustring {
   }
 
   print(r.prompt)
-  line := os.get_raw_line()
+  r.current = os.get_line().ustring()
 
-  if line.len >= 0 {
-    r.current = line.ustring()
-  }
   r.previous_lines[0] = ''.ustring()
   r.search_index = 0
   if r.current.s == '' {
