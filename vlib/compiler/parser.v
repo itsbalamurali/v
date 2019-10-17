@@ -148,7 +148,11 @@ fn (v mut V) new_parser(scanner &Scanner, id string) Parser {
 		vroot: v.vroot
 		local_vars: [Var{}].repeat(MaxLocalVars)
 		import_table: v.table.get_file_import_table(id)
+		v_script: id.ends_with('.vsh')
 	}
+	if p.v_script {
+		println('new_parser: V script')
+	}	
 	$if js {
 		p.is_js = true
 	}
@@ -742,7 +746,7 @@ fn (p mut Parser) struct_decl() {
 		}
 		if p.tok == .key_mut {
 			if is_mut {
-				p.error('structs can only have one `mut:`, all private key_mut fields have to be grouped')
+				p.error('structs can only have one `mut:`, all private mutable fields have to be grouped')
 			}
 			is_mut = true
 			p.fmt_dec()
@@ -987,35 +991,22 @@ fn (p mut Parser) get_type() string {
 		return f.typ_str()
 	}
 	// arrays ([]int)
-	mut is_arr := false
-	mut is_arr2 := false// [][]int TODO remove this and allow unlimited levels of arrays
+	mut arr_level := 0
 	is_question := p.tok == .question
 	if is_question {
 		p.check(.question)
 	}
-	if p.tok == .lsbr {
+	for p.tok == .lsbr {
 		p.check(.lsbr)
 		// [10]int
 		if p.tok == .number {
-			typ = '[$p.lit]'
+			typ += '[$p.lit]'
 			p.next()
 		}
 		else {
-			is_arr = true
+			arr_level++
 		}
 		p.check(.rsbr)
-		// [10][3]int
-		if p.tok == .lsbr {
-			p.next()
-			if p.tok == .number {
-				typ += '[$p.lit]'
-				p.check(.number)
-			}
-			else {
-				is_arr2 = true
-			}
-			p.check(.rsbr)
-		}
 	}
 	// map[string]int
 	if !p.builtin_mod && p.tok == .name && p.lit == 'map' {
@@ -1101,14 +1092,12 @@ fn (p mut Parser) get_type() string {
 		typ += strings.repeat(`*`, nr_muls)
 	}
 	// Register an []array type
-	if is_arr2 {
-		typ = 'array_array_$typ'
-		p.register_array(typ)
-	}
-	else if is_arr {
-		typ = 'array_$typ'
+	if arr_level > 0 {
 		// p.log('ARR TYPE="$typ" run=$p.pass')
 		// We come across "[]User" etc ?
+		for i := 0; i < arr_level; i++ {
+			typ = 'array_$typ'
+		}
 		p.register_array(typ)
 	}
 	p.next()
@@ -1943,23 +1932,17 @@ fn (p mut Parser) name_expr() string {
 		}
 		return typ
 	}
-	// Function (not method btw, methods are handled in dot())
-	mut f := p.table.find_fn(name) or {
-		// We are in the second pass, that means this function was not defined, throw an error.
+	// Function (not method btw, methods are handled in `dot()`)
+	mut f := p.table.find_fn_is_script(name, p.v_script) or {
+		// We are in the second pass, that means this function was not defined,
+		// throw an error.
 		if !p.first_pass() {
-			// V script? Try os module.
-			// TODO
-			if p.v_script {
-				//name = name.replace('main__', 'os__')
-				//f = p.table.find_fn(name)
-			}
 			// check for misspelled function / variable / module
 			suggested := p.identify_typo(name, p.import_table)
 			if suggested != '' {
 				p.error('undefined: `$name`. did you mean:$suggested')
 			}
 			// If orig_name is a mod, then printing undefined: `mod` tells us nothing
-			// if p.table.known_mod(orig_name) {
 			if p.table.known_mod(orig_name) || p.import_table.known_alias(orig_name) {
 				name = name.replace('__', '.')
 				p.error('undefined: `$name`')
@@ -1970,6 +1953,8 @@ fn (p mut Parser) name_expr() string {
 		} else {
 			p.next()
 			// First pass, the function can be defined later.
+			// Only in const definitions? (since fn bodies are skipped
+			// in the first pass).
 			return 'void'
 		}
 		return 'void'
@@ -2922,7 +2907,9 @@ fn (p mut Parser) string_expr() {
 					if is_array && !has_str_method {
 						p.gen_array_str(typ2)
 					}
-					args = args.all_before_last(val) + '${typ}_str(${val}).len, ${typ}_str(${val}).str'
+					tmp_var := p.get_tmp()
+					p.cgen.insert_before('string $tmp_var = ${typ}_str(${val});')
+					args = args.all_before_last(val) + '${tmp_var}.len, ${tmp_var}.str'
 					format += '%.*s '
 				}
 				else {
@@ -3573,6 +3560,8 @@ fn (p mut Parser) for_st() {
 				typ: var_type
 				ptr: typ.contains('*')
 				is_changed: true
+				is_mut: false
+				is_for_var: true
 			})
 		}
 	} else {
