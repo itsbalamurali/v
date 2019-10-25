@@ -93,21 +93,11 @@ fn (p mut Parser) gen_blank_identifier_assign() {
 	p.check_name()
 	p.check_space(.assign)
 	is_indexer := p.peek() == .lsbr
-	mut expr := p.lit
-	mut is_fn_call := p.peek() == .lpar 
-	if !is_fn_call {
-		mut i := p.token_idx+1
-		for (p.tokens[i].tok == .dot || p.tokens[i].tok == .name) &&
-			p.tokens[i].lit != '_' {
-			expr += if p.tokens[i].tok == .dot { '.' } else { p.tokens[i].lit }
-			i++
-		}
-		is_fn_call = p.tokens[i].tok == .lpar
-	}
+	is_fn_call, next_expr := p.is_next_expr_fn_call()
 	pos := p.cgen.add_placeholder()
 	mut typ := p.bool_expression()
 	if !is_indexer && !is_fn_call {
-		p.error_with_token_index('assigning `$expr` to `_` is redundant', assign_error_tok_idx)
+		p.error_with_token_index('assigning `$next_expr` to `_` is redundant', assign_error_tok_idx)
 	}
 	tmp := p.get_tmp()
 	// handle or
@@ -257,7 +247,9 @@ fn (table mut Table) fn_gen_name(f &Fn) string {
 	return name
 }
 
-fn (p mut Parser) gen_method_call(receiver_type, ftyp string, cgen_name string, receiver Var,method_ph int) {
+fn (p mut Parser) gen_method_call(receiver_type, ftyp string, cgen_name string,
+	receiver Var,method_ph int)
+{
 	//mut cgen_name := p.table.fn_gen_name(f)
 	mut method_call := cgen_name + '('
 	// if receiver is key_mut or a ref (&), generate & for the first arg
@@ -522,22 +514,22 @@ fn type_default(typ string) string {
 		return '{0}'
 	}
 	// Default values for other types are not needed because of mandatory initialization
-	switch typ {
-	case 'bool': return '0'
-	case 'string': return 'tos((byte *)"", 0)'
-	case 'i8': return '0'
-	case 'i16': return '0'
-	case 'i64': return '0'
-	case 'u16': return '0'
-	case 'u32': return '0'
-	case 'u64': return '0'
-	case 'byte': return '0'
-	case 'int': return '0'
-	case 'rune': return '0'
-	case 'f32': return '0.0'
-	case 'f64': return '0.0'
-	case 'byteptr': return '0'
-	case 'voidptr': return '0'
+	match typ {
+	'bool'{ return '0'}
+	'string'{ return 'tos3("")'}
+	'i8'{ return '0'}
+	'i16'{ return '0'}
+	'i64'{ return '0'}
+	'u16'{ return '0'}
+	'u32'{ return '0'}
+	'u64'{ return '0'}
+	'byte'{ return '0'}
+	'int'{ return '0'}
+	'rune'{ return '0'}
+	'f32'{ return '0.0'}
+	'f64'{ return '0.0'}
+	'byteptr'{ return '0'}
+	'voidptr'{ return '0'}
 	}
 	return '{0}'
 }

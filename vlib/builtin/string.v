@@ -43,7 +43,7 @@ NB: A V string should be/is immutable from the point of view of
 
 import strconv
 
-struct string {
+pub struct string {
 //mut:
 	//hash_cache int
 pub:
@@ -51,21 +51,16 @@ pub:
 	len int     // the length of the .str field, excluding the ending 0 byte. It is always equal to strlen(.str).
 }
 
-struct ustring {
+pub struct ustring {
 pub:
 	s     string
 	runes []int
 	len   int
 }
 
-// For C strings only
-fn C.strlen(s byteptr) int
-
 pub fn vstrlen(s byteptr) int {
 	return C.strlen(*char(s))
 }	
-
-fn todo() { }
 
 // Converts a C string to a V string.
 // String data is reused, not copied.

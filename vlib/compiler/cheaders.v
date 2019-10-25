@@ -21,13 +21,14 @@ CommonCHeaders = '
 
 #ifdef __APPLE__
 #include <libproc.h> // proc_pidpath
-#include <execinfo.h> // backtrace and backtrace_symbols_fd
+//#include <execinfo.h> // backtrace and backtrace_symbols_fd
 #endif
 
 #ifdef __linux__
-#ifndef __BIONIC__
-#include <execinfo.h> // backtrace and backtrace_symbols_fd
-#endif
+//#if !defined(__BIONIC__) && !defined(__GNUC_PREREQ)
+//#include <execinfo.h> // backtrace and backtrace_symbols_fd
+//#endif
+
 #pragma weak backtrace
 #pragma weak backtrace_symbols_fd
 #endif
@@ -168,7 +169,6 @@ var u64 = function() {}
 var u32 = function() {}
 var u16 = function() {}
 var i8 = function() {}
-var u8 = function() {}
 var bool = function() {}
 var rune = function() {}
 var map_string = function() {}
