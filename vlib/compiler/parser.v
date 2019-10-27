@@ -336,7 +336,7 @@ fn (p mut Parser) parse(pass Pass) {
 			match next {
 				.key_fn     {	p.fn_decl()     }
 				.key_const  {	p.const_decl()  }
-				.key_struct {	p.struct_decl() }
+				.key_struct, .key_union, .key_interface {	p.struct_decl() }
 				.key_enum   {	p.enum_decl('') }
 				else {
 					p.error('wrong pub keyword usage')
@@ -1947,6 +1947,9 @@ fn (p mut Parser) dot(str_typ_ string, method_ph int) string {
 		p.gen_array_filter(str_typ, method_ph)
 		return str_typ
 	}	
+	else if field_name == 'map' && str_typ.starts_with('array_') {
+		return p.gen_array_map(str_typ, method_ph)
+	}	
 	
 	fname_tidx := p.cur_tok_index()
 	p.fgen(field_name)
@@ -2088,6 +2091,7 @@ fn (p mut Parser) index_expr(typ_ string, fn_ph int) string {
 	is_arr0 := typ.starts_with('array_')
 	is_arr := is_arr0 || typ == 'array'
 	is_ptr := typ == 'byte*' || typ == 'byteptr' || typ.contains('*')
+	mut is_slice := false
 	is_indexer := p.tok == .lsbr
 	mut close_bracket := false
 	index_error_tok_pos := p.token_idx
@@ -2160,6 +2164,19 @@ fn (p mut Parser) index_expr(typ_ string, fn_ph int) string {
 			if p.cgen.cur_line.right(index_pos).replace(' ', '').int() < 0 {
 				p.error('cannot access negative array index')
 			}
+			if p.tok == .dotdot {
+				if is_arr {
+					typ = 'array_' + typ
+				} else if is_str {
+					typ = 'string'
+				}	 else {
+					p.error('slicing is supported by arrays and strings only')
+				}	
+				is_slice = true
+				p.next()
+				p.gen(',')
+				p.check_types(p.expression(), 'int')
+			}	
 		}
 		else {
 			T := p.table.find_type(p.expression())
@@ -2194,6 +2211,7 @@ fn (p mut Parser) index_expr(typ_ string, fn_ph int) string {
 			return typ
 		}
 	}
+	// `m[key] = val`
 	// TODO move this from index_expr()
 	if (p.tok == .assign && !p.is_sql) || p.tok.is_assign() {
 		if is_indexer && is_str && !p.builtin_mod {
@@ -2213,26 +2231,27 @@ fn (p mut Parser) index_expr(typ_ string, fn_ph int) string {
 	// else if p.pref.is_verbose && p.assigned_var != '' {
 	// p.error('didnt assign')
 	// }
-	// m[key]. no =, just a getter
+	// `m[key]`. no =, just a getter
 	else if (is_map || is_arr || (is_str && !p.builtin_mod)) && is_indexer {
-		p.index_get(typ, fn_ph, IndexCfg{
+		p.index_get(typ, fn_ph, IndexConfig{
 			is_arr: is_arr
 			is_map: is_map
 			is_ptr: is_ptr
 			is_str: is_str
+			is_slice: is_slice
 		})
 	}
 	// else if is_arr && is_indexer{}
 	return typ
 }
 
-struct IndexCfg {
+struct IndexConfig {
 	is_map bool
 	is_str bool
 	is_ptr bool
 	is_arr bool
 	is_arr0 bool
-
+	is_slice bool
 }
 
 // for debugging only
@@ -3853,7 +3872,13 @@ fn (p mut Parser) js_decode() string {
 
 fn (p mut Parser) attribute() {
 	p.check(.lsbr)
-	p.attr = p.check_name()
+	if p.tok == .key_if {
+		// [if vfmt]
+		p.next()
+		p.attr = 'if ' + p.check_name()
+	}	else {
+		p.attr = p.check_name()
+	}
 	attr_token_idx := p.cur_tok_index()
 	if p.tok == .colon {
 		p.check(.colon)
