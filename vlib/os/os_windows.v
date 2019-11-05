@@ -61,7 +61,7 @@ pub fn ls(path string) ?[]string {
 	// }
 	// C.FindClose(h_find_dir)
 	if !dir_exists(path) {
-		return error('ls() couldnt open dir "$path"')
+		return error('ls() couldnt open dir "$path": directory does not exist')
 	}
 	// NOTE: Should eventually have path struct & os dependant path seperator (eg os.PATH_SEPERATOR)
 	// we need to add files to path eg. c:\windows\*.dll or :\windows\*
@@ -126,13 +126,15 @@ pub fn get_module_filename(handle HANDLE) ?string {
     mut buf := &u16(malloc(4096))
     for {
         status := C.GetModuleFileName(handle, &buf, sz)
-        switch status {
-        case SUCCESS:
-            _filename := string_from_wide2(buf, sz)
-            return _filename
-        default:
-            // Must handled with GetLastError and converted by FormatMessage
-            return error('Cannot get file name from handle')
+        match status {
+            SUCCESS {
+                _filename := string_from_wide2(buf, sz)
+                return _filename
+            }
+            else {
+                // Must handled with GetLastError and converted by FormatMessage
+                return error('Cannot get file name from handle')
+            }
         }
     }
     panic('this should be unreachable') // TODO remove unreachable after loop
