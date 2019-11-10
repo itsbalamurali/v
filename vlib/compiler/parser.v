@@ -73,6 +73,7 @@ mut:
 	sql_params []string // ("select * from users where id = $1", ***"100"***)
 	sql_types []string // int, string and so on; see sql_params
 	is_vh bool // parsing .vh file (for example `const (a int)` is allowed)
+	fmt_dollar bool
 pub:
 	mod            string
 }
@@ -279,6 +280,7 @@ fn (p mut Parser) parse(pass Pass) {
 		p.mod = p.check_name()
 	}
 	//
+		p.fgenln('\n')
 
 	p.cgen.nogen = false
 	if p.pref.build_mode == .build_module && p.mod != p.v.mod {
@@ -314,22 +316,11 @@ fn (p mut Parser) parse(pass Pass) {
 	for {
 		match p.tok {
 		.key_import {
-			if p.peek() == .key_const {
-				p.const_decl()
-			}
-			else {
-				// TODO remove imported consts from the language
-				p.imports()
-				if p.tok != .key_import {
-					p.fgenln('')
-				}
-			}
+			p.imports()
 		}
 		.key_enum {
 			next := p.peek()
 			if next == .name {
-				p.fgen('enum ')
-				p.fgen(' ')
 				p.enum_decl(false)
 			}
 			else if next == .lcbr && p.pref.translated {
@@ -392,6 +383,7 @@ fn (p mut Parser) parse(pass Pass) {
 				//p.error('__global is only allowed in translated code')
 			}
 			p.next()
+			p.fspace()
 			name := p.check_name()
 			typ := p.get_type()
 			p.register_global(name, typ)
@@ -408,6 +400,11 @@ fn (p mut Parser) parse(pass Pass) {
 			if !p.cgen.nogen {
 				p.cgen.consts << g
 			}
+			p.fgenln('')
+			if p.tok != .key_global {
+				// An extra empty line to separate a block of globals
+				p.fgenln('')
+			}	
 		}
 		.eof {
 			//p.log('end of parse()')
@@ -420,19 +417,7 @@ fn (p mut Parser) parse(pass Pass) {
 			if !p.first_pass() && !p.pref.is_repl {
 				p.check_unused_imports()
 			}
-			if !p.first_pass() && p.fileis('main.v') {
-				s := p.scanner.fmt_out.str().trim_space()
-				if s.len > 0 {
-					println('GENERATING MAIN.V')
-					out := os.create('/var/tmp/fmt.v') or {
-						verror('failed to create fmt.v')
-						return
-					}
-					//println(p.scanner.fmt_out.str())
-					out.writeln(p.scanner.fmt_out.str().trim_space())
-					out.close()
-				}
-			}
+			p.gen_fmt() // not generated unless `-d vfmt` is provided
 			return
 		}
 		else {
@@ -474,7 +459,6 @@ fn (p mut Parser) parse(pass Pass) {
 }
 
 fn (p mut Parser) imports() {
-	p.fgenln2('\n')
 	p.check(.key_import)
 	// `import ()`
 	if p.tok == .lpar {
@@ -487,7 +471,10 @@ fn (p mut Parser) imports() {
 	}
 	// `import foo`
 	p.import_statement()
-	p.fgenln2('')
+	p.fgenln('')
+	if p.tok != .key_import {
+		p.fgenln('')
+	}
 }
 
 fn (p mut Parser) import_statement() {
@@ -520,7 +507,6 @@ fn (p mut Parser) import_statement() {
 	}
 	// add import to file scope import table
 	p.register_import_alias(mod_alias, mod, import_tok_idx)
-	p.fgenln2('')
 	// Make sure there are no duplicate imports
 	if mod in p.table.imports {
 		return
@@ -680,7 +666,7 @@ fn (p mut Parser) interface_method(field_name, receiver string) &Fn {
 		method.typ = 'void'
 	} else {
 		method.typ = p.get_type()// method return type
-		p.fspace()
+		//p.fspace()
 		p.fgenln('')
 	}
 	return method
@@ -720,8 +706,15 @@ fn (p &Parser) strtok() string {
 	if p.tok == .name {
 		return p.lit
 	}
+	if p.tok == .number {
+		return p.lit
+	}	
 	if p.tok == .str {
-		return '"$p.lit"'
+		if p.lit.contains("'") {
+			return '"$p.lit"'
+		}	  else {
+			return "'$p.lit'"
+		}
 	}
 	res := p.tok.str()
 	if res == '' {
@@ -782,6 +775,8 @@ fn (p mut Parser) get_type() string {
 	mut typ := ''
 	// multiple returns
 	if p.tok == .lpar {
+		//p.warn('`()` are no longer necessary in multiple returns' +
+		//'\nuse `fn foo() int, int {` instead of `fn foo() (int, int) {`')
 		// if p.inside_tuple {p.error('unexpected (')}
 		// p.inside_tuple = true
 		p.check(.lpar)
@@ -874,7 +869,6 @@ fn (p mut Parser) get_type() string {
 		nr_muls++
 		p.check(.amp)
 	}
-
 	// Generic type check
 	ti := p.cur_fn.dispatch_of.inst
 	if p.lit in ti.keys() {
@@ -882,12 +876,6 @@ fn (p mut Parser) get_type() string {
 		// println('cur dispatch: $p.lit => $typ')
 	} else {
 		typ += p.lit
-	}
-
-	if !p.is_struct_init {
-		// Otherwise we get `foo := FooFoo{` because `Foo` was already
-		// generated in name_expr()
-		p.fgen(p.lit)
 	}
 	// C.Struct import
 	if p.lit == 'C' && p.peek() == .dot {
@@ -1013,7 +1001,7 @@ fn (p mut Parser) statements_no_rcbr() string {
 		// println('last st typ=$last_st_typ')
 		if !p.inside_if_expr {
 			p.genln('')// // end st tok= ${p.strtok()}')
-			p.fgenln2('')
+			p.fgenln('')
 		}
 		i++
 		if i > 50000 {
@@ -1134,7 +1122,7 @@ fn (p mut Parser) statement(add_semi bool) string {
 	}
 	.key_goto {
 		p.check(.key_goto)
-		p.fgen(' ')
+		p.fspace()
 		label := p.check_name()
 		p.genln('goto $label;')
 		return ''
@@ -1270,9 +1258,8 @@ fn ($v.name mut $v.typ) $p.cur_fn.name (...) {
 	}
 	}
 	p.fspace()
-	p.fgen(tok.str())
-	p.fspace()
 	p.next()
+	p.fspace()
 	pos := p.cgen.cur_line.len
 	expr_type := p.bool_expression()
 	//if p.expected_type.starts_with('array_') {
@@ -1301,20 +1288,13 @@ fn ($v.name mut $v.typ) $p.cur_fn.name (...) {
 		}
 		p.cgen.resetln('memcpy( (& $left), ($etype{$expr}), sizeof( $left ) );')
 	}
-	else if tok == .left_shift_assign || tok == .righ_shift_assign {
+	// check type for <<= >>= %= ^= &= |=
+	else if tok in [.left_shift_assign, .righ_shift_assign, .mod_assign, .xor_assign, .and_assign, .or_assign] {
 		if !is_integer_type(p.assigned_type) {
-			p.error_with_token_index( 'cannot use shift operator on non-integer type `$p.assigned_type`', errtok)
+			p.error_with_token_index( 'cannot use ${tok.str()} assignment operator on non-integer type `$p.assigned_type`', errtok)
 		}
 		if !is_integer_type(expr_type) {
-			p.error_with_token_index( 'cannot use non-integer type `$expr_type` as shift argument', errtok)
-		}
-	}
-	else if tok == .mod_assign {
-		if !is_integer_type(p.assigned_type) {
-			p.error_with_token_index( 'cannot use modulo operator on non-integer type `$p.assigned_type`', errtok)
-		}
-		if !is_integer_type(expr_type) {
-			p.error_with_token_index( 'cannot use non-integer type `$expr_type` as modulo argument', errtok)
+			p.error_with_token_index( 'cannot use non-integer type `$expr_type` as ${tok.str()} argument', errtok)
 		}
 	}
 	else if !p.builtin_mod && !p.check_types_no_throw(expr_type, p.assigned_type) {
@@ -1501,6 +1481,11 @@ fn (p mut Parser) get_var_type(name string, is_ptr bool, is_deref bool) string {
 	mut typ := p.var_expr(v)
 	// *var
 	if is_deref {
+		/*
+		if !p.inside_unsafe {
+			p.error('dereferencing can only be done inside an `unsafe` block')
+		}	
+		*/
 		if !typ.contains('*') && !typ.ends_with('ptr') {
 			println('name="$name", t=$v.typ')
 			p.error('dereferencing requires a pointer, but got `$typ`')
@@ -1640,7 +1625,6 @@ fn (p mut Parser) var_expr(v Var) string {
 			}
 		}
 		p.gen(p.tok.str())
-		p.fgen(p.tok.str())
 		p.next()// ++/--
 		// allow `a := c++` in translated code TODO remove once c2v handles this
 		if p.pref.translated {
@@ -1688,7 +1672,6 @@ fn (p mut Parser) dot(str_typ_ string, method_ph int) string {
 	}	
 	
 	fname_tidx := p.cur_tok_index()
-	p.fgen(field_name)
 	//p.log('dot() field_name=$field_name typ=$str_typ')
 	//if p.fileis('main.v') {
 		//println('dot() field_name=$field_name typ=$str_typ prev_tok=${prev_tok.str()}')
@@ -1850,7 +1833,6 @@ fn (p mut Parser) index_expr(typ_ string, fn_ph int) string {
 		// Get element type (set `typ` to it)
 		if is_str {
 			typ = 'byte'
-			p.fgen('[')
 			// Direct faster access to .str[i] in builtin modules
 			if p.builtin_mod {
 				p.gen('.str[')
@@ -2033,7 +2015,7 @@ fn (p mut Parser) indot_expr() string {
 	// `a in [1, 2, 3]`
 	// `key in map`
 	if p.tok == .key_in {
-		p.fgen(' ')
+		p.fspace()
 		p.check(.key_in)
 		p.expected_type = typ // this allows `foo in [.val1, .val2, .val3]`
 		if p.tok == .lsbr {
@@ -2042,7 +2024,7 @@ fn (p mut Parser) indot_expr() string {
 			p.in_optimization(typ, ph)
 			return 'bool'
 		}
-		p.fgen(' ')
+		p.fspace()
 		p.gen('), ')
 		arr_typ := p.expression()
 		is_map := arr_typ.starts_with('map_')
@@ -2126,7 +2108,6 @@ fn (p mut Parser) string_expr() {
 	str := p.lit
 	// No ${}, just return a simple string
 	if p.peek() != .dollar || is_raw {
-		p.fgen("'$str'")
 		f := if is_raw { cescaped_path(str) } else { format_str(str) }
 		// `C.puts('hi')` => `puts("hi");`
 		/*
@@ -2154,11 +2135,9 @@ fn (p mut Parser) string_expr() {
 	p.is_alloc = true // $ interpolation means there's allocation
 	mut args := '"'
 	mut format := '"'
-	p.fgen('\'')
 	mut complex_inter := false  // for vfmt
 	for p.tok == .str {
 		// Add the string between %d's
-		p.fgen(p.lit)
 		p.lit = p.lit.replace('%', '%%')
 		format += format_str(p.lit)
 		p.next()// skip $
@@ -2243,7 +2222,7 @@ fn (p mut Parser) string_expr() {
 	if complex_inter {
 		p.fgen('}')
 	}
-	p.fgen('\'')
+	//p.fgen('\'')
 	// println("hello %d", num) optimization.
 	if p.cgen.nogen {
 		return
@@ -2548,9 +2527,10 @@ fn (p mut Parser) if_st(is_expr bool, elif_depth int) string {
 	}
 	if_returns := p.returns
 	p.returns = false
-	// println('IF TYp=$typ')
 	if p.tok == .key_else {
-		p.fgenln2('')
+		if !p.inside_if_expr {
+			p.fgenln('')
+		}
 		p.check(.key_else)
 		p.fspace()
 		if p.tok == .key_if {
@@ -2737,6 +2717,7 @@ fn (p mut Parser) return_st() {
 			p.gen('return')
 		}
 	}
+	//p.fgenln('//ret')
 	p.returns = true
 }
 
@@ -2765,6 +2746,7 @@ fn (p &Parser) prepend_mod(name string) string {
 
 fn (p mut Parser) go_statement() {
 	p.check(.key_go)
+	p.fspace()
 	mut gotoken_idx := p.cur_tok_index()
 	// TODO copypasta of name_expr() ?
 	if p.peek() == .dot {
@@ -2883,6 +2865,7 @@ fn (p mut Parser) attribute() {
 		p.attr = p.attr + ':' + p.check_name()
 	}
 	p.check(.rsbr)
+	p.fgenln('')
 	if p.tok == .key_fn || (p.tok == .key_pub && p.peek() == .key_fn) {
 		p.fn_decl()
 		p.attr = ''
