@@ -291,6 +291,9 @@ fn (t Token) str() string {
 		return t.lit
 		
 	}	
+	if t.tok == .chartoken {
+		return '`$t.lit`'
+	}	
 	if t.tok == .str {
 		return "'$t.lit'"
 	}	

@@ -73,7 +73,6 @@ mut:
 	sql_params []string // ("select * from users where id = $1", ***"100"***)
 	sql_types []string // int, string and so on; see sql_params
 	is_vh bool // parsing .vh file (for example `const (a int)` is allowed)
-	fmt_dollar bool
 pub:
 	mod            string
 }
@@ -991,7 +990,7 @@ fn (p mut Parser) statements_no_rcbr() string {
 	p.open_scope()
 
 	if !p.inside_if_expr {
-		p.genln('')
+		//p.genln('')
 	}
 	mut i := 0
 	mut last_st_typ := ''
@@ -1000,7 +999,7 @@ fn (p mut Parser) statements_no_rcbr() string {
 		last_st_typ = p.statement(true)
 		// println('last st typ=$last_st_typ')
 		if !p.inside_if_expr {
-			p.genln('')// // end st tok= ${p.strtok()}')
+			//p.genln('')// // end st tok= ${p.strtok()}')
 			p.fgenln('')
 		}
 		i++
@@ -2153,10 +2152,8 @@ fn (p mut Parser) string_expr() {
 			complex_inter = true
 		}
 		// Get bool expr inside a temp var
-		p.cgen.start_tmp()
-		typ := p.bool_expression()
-		mut val := p.cgen.end_tmp()
-		val = val.trim_space()
+		typ, val_ := p.tmp_expr()
+		val := val_.trim_space()
 		args += ', $val'
 		if typ == 'string' {
 			// args += '.str'
@@ -2264,8 +2261,7 @@ fn (p mut Parser) map_init() string {
 			keys_gen += 'tos3("$key"), '
 			p.check(.str)
 			p.check(.colon)
-			p.cgen.start_tmp()
-			t := p.bool_expression()
+			t, val_expr := p.tmp_expr()
 			if i == 0 {
 				val_type = t
 			}
@@ -2275,7 +2271,6 @@ fn (p mut Parser) map_init() string {
 					p.error('bad map element type `$val_type` instead of `$t`')
 				}
 			}
-			val_expr := p.cgen.end_tmp()
 			vals_gen += '$val_expr, '
 			if p.tok == .rcbr {
 				p.check(.rcbr)
@@ -2454,13 +2449,6 @@ fn (p mut Parser) get_tmp_counter() int {
 	return p.tmp_cnt
 }
 
-// returns expression's type, and entire expression's string representation)
-fn (p mut Parser) tmp_expr() (string, string) {
-		p.cgen.start_tmp()
-		typ := p.bool_expression()
-		val := p.cgen.end_tmp()
-		return typ, val
-}
 
 fn (p mut Parser) if_st(is_expr bool, elif_depth int) string {
 	if is_expr {
@@ -2653,9 +2641,9 @@ fn (p mut Parser) return_st() {
 		types << expr_type
 		for p.tok == .comma {
 			p.check(.comma)
-			p.cgen.start_tmp()
-			types << p.bool_expression()
-			mr_values << p.cgen.end_tmp().trim_space()
+			typ, expr := p.tmp_expr()
+			types << typ
+			mr_values << expr.trim_space()
 		}
 		mut cur_fn_typ_chk := p.cur_fn.typ
 		// multiple returns
@@ -2808,9 +2796,8 @@ fn (p mut Parser) js_decode() string {
 		p.check(.lpar)
 		typ := p.get_type()
 		p.check(.comma)
-		p.cgen.start_tmp()
-		p.check_types(p.bool_expression(), 'string')
-		expr := p.cgen.end_tmp()
+		styp, expr := p.tmp_expr()
+		p.check_types(styp, 'string')
 		p.check(.rpar)
 		tmp := p.get_tmp()
 		cjson_tmp := p.get_tmp()
@@ -2820,7 +2807,7 @@ fn (p mut Parser) js_decode() string {
 		for field in T.fields {
 			def_val := type_default(field.typ)
 			if def_val != '' {
-				decl += '$tmp . $field.name = OPTION_CAST($field.typ) $def_val;\n'
+				decl += '${tmp}.$field.name = OPTION_CAST($field.typ) $def_val;\n'
 			}
 		}
 		p.gen_json_for_type(T)
@@ -2835,11 +2822,9 @@ fn (p mut Parser) js_decode() string {
 	}
 	else if op == 'encode' {
 		p.check(.lpar)
-		p.cgen.start_tmp()
-		typ := p.bool_expression()
+		typ, expr := p.tmp_expr()
 		T := p.table.find_type(typ)
 		p.gen_json_for_type(T)
-		expr := p.cgen.end_tmp()
 		p.check(.rpar)
 		p.gen('json__json_print(json__jsencode_$typ($expr))')
 		return 'string'
