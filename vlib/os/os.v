@@ -31,14 +31,8 @@ pub const (
 	MAX_PATH = 4096
 )
 
-/*
-struct C.FILE {
-	
-}
-*/
-
 pub struct File {
-	cfile voidptr
+	cfile voidptr // Using void* instead of FILE*
 }
 
 struct FileInfo {
@@ -839,9 +833,15 @@ pub fn realpath(fpath string) string {
 		res = int( C._fullpath( fullpath, fpath.str, MAX_PATH ) )
 	}
 	$else{
-		// here we want an int==0 if realpath failed, in which case
-		// realpath would return NULL, and !isnil(NULL) would be false==0
-		res = int( !isnil(C.realpath( fpath.str, fullpath )) )
+		if fpath.len != strlen(fpath.str) {
+			l := strlen(fpath.str)
+			println('FIXME realpath diff len $fpath.len strlen=$l')
+		}	
+		ret := C.realpath(fpath.str, fullpath)
+		if ret == 0 {
+			return fpath
+		}	
+		return string(fullpath)
 	}
 	if res != 0 {
 		return string(fullpath, vstrlen(fullpath))
@@ -852,7 +852,7 @@ pub fn realpath(fpath string) string {
 // walk_ext returns a recursive list of all file paths ending with `ext`.
 pub fn walk_ext(path, ext string) []string {
 	if !os.is_dir(path) {
-		return []string
+		return []
 	}
 	mut files := os.ls(path) or { panic(err) }
 	mut res := []string
