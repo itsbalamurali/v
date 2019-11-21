@@ -234,7 +234,14 @@ pub fn (v mut V) compile() {
 	$if js {
 		cgen.genln(js_headers)
 	} $else {
+		if !v.pref.is_bare {
+			cgen.genln('#include <inttypes.h>')  // int64_t etc
+		} else {
+			cgen.genln('#include <stdint.h>')
+		}	
+		
 		cgen.genln(c_builtin_types)
+		
 		if !v.pref.is_bare {
 			cgen.genln(c_headers)
 		}
@@ -425,13 +432,14 @@ pub fn (v mut V) generate_main() {
 	if v.pref.build_mode != .build_module {
 		if !v.table.main_exists() && !v.pref.is_test {
 			// It can be skipped in single file programs
-			if v.pref.is_script {
+			// But make sure that there's some code outside of main()
+			if (v.pref.is_script && cgen.fn_main.trim_space() != '') || v.pref.is_repl {
 				//println('Generating main()...')
 				v.gen_main_start(true)
 				cgen.genln('$cgen.fn_main;')
 				v.gen_main_end('return 0')
 			}
-			else {
+			else if !v.pref.is_repl {
 				verror('function `main` is not declared in the main module')
 			}
 		}
@@ -445,7 +453,9 @@ pub fn (v mut V) generate_main() {
 			// Generate a C `main`, which calls every single test function
 			v.gen_main_start(false)
 
-			if v.pref.is_stats { cgen.genln('BenchedTests bt = main__start_testing();') }
+			if v.pref.is_stats {
+				cgen.genln('BenchedTests bt = main__start_testing();')
+			}
 
 			for _, f in v.table.fns {
 				if f.name.starts_with('main__test_') {
@@ -792,6 +802,7 @@ pub fn new_v(args[]string) &V {
 	vgen_buf.writeln('module vgen\nimport strings')
 
 	joined_args := args.join(' ')
+		
 	target_os := get_arg(joined_args, 'os', '')
 	comptime_define := get_arg(joined_args, 'd', '')
 	//println('comptimedefine=$comptime_define')
@@ -831,7 +842,9 @@ pub fn new_v(args[]string) &V {
 		mod = mod_path.replace(os.path_separator, '.')
 		println('Building module "${mod}" (dir="$dir")...')
 		//out_name = '$TmpPath/vlib/${base}.o'
-		out_name = mod
+		if !out_name.ends_with('.c') {
+			out_name = mod
+		}
 		// Cross compiling? Use separate dirs for each os
 		/*
 		if target_os != os.user_os() {
@@ -921,8 +934,8 @@ pub fn new_v(args[]string) &V {
 		println('Go to https://vlang.io to install V.')
 		exit(1)
 	}
-	// println('out_name:$out_name')
-	mut out_name_c := os.realpath('${out_name}.tmp.c')
+
+	mut out_name_c := get_vtmp_filename( out_name, '.tmp.c')
 
 	cflags := get_cmdline_cflags(args)
 
@@ -942,7 +955,6 @@ pub fn new_v(args[]string) &V {
 		is_vlines:     '-g' in args && !('-cg' in args)
 		is_keep_c:     '-keep_c' in args
 		is_cache:      '-cache' in args
-
 		is_stats: '-stats' in args
 		obfuscate: obfuscate
 		is_prof: '-prof' in args
@@ -969,7 +981,7 @@ pub fn new_v(args[]string) &V {
 		println('C compiler=$pref.ccompiler')
 	}
 	if pref.is_so {
-		out_name_c = out_name.all_after(os.path_separator) + '_shared_lib.c'
+		out_name_c = get_vtmp_filename( out_name, '.tmp.so.c')
 	}
 	$if !linux {
 		if pref.is_bare && !out_name.ends_with('.c') {
@@ -1023,21 +1035,23 @@ pub fn vfmt(args[]string) {
 }
 
 pub fn create_symlink() {
+	$if windows { return }
 	vexe := vexe_path()
 	link_path := '/usr/local/bin/v'
 	ret := os.system('ln -sf $vexe $link_path')
 	if ret == 0 {
-		println('symlink "$link_path" has been created')
+		println('Symlink "$link_path" has been created')
 	} else {
-		println('failed to create symlink "$link_path", '+
-			'make sure you run with sudo')
+		println('Failed to create symlink "$link_path". Try again with sudo.')
 	}
 }
 
 pub fn vexe_path() string {
 	vexe := os.getenv('VEXE')
 	if '' != vexe {	return vexe	}
-	return os.executable()
+	real_vexe_path := os.realpath(os.executable())
+	os.setenv('VEXE', real_vexe_path, true)
+	return real_vexe_path
 }
 
 pub fn verror(s string) {

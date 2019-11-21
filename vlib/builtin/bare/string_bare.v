@@ -8,9 +8,7 @@ pub:
 
 pub fn strlen(s byteptr) int {
 	mut i := 0
-	for i = 0; s[i] != 0; i++ {
-		
-	}	
+	for ; s[i] != 0; i++ {}	
 	return i
 }	
 
@@ -24,12 +22,14 @@ pub fn tos(s byteptr, len int) string {
 	}
 }
 
+/*
 pub fn tos_clone(s byteptr) string {
 	if s == 0 {
 		panic('tos: nil string')
 	}
 	return tos2(s).clone()
 }
+*/
 
 // Same as `tos`, but calculates the length. Called by `string(bytes)` casts.
 // Used only internally.
@@ -53,6 +53,7 @@ pub fn tos3(s *C.char) string {
 	}
 }
 
+/*
 pub fn (a string) clone() string {
 	mut b := string {
 		len: a.len
@@ -64,3 +65,4 @@ pub fn (a string) clone() string {
 	b[a.len] = `\0`
 	return b
 }
+*/
